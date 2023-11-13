@@ -1,0 +1,81 @@
+if (!require("readr")) {
+  install.packages("readr")
+  library(readr)
+}
+
+if (!require("aws.s3")) {
+  install.packages("aws.s3")
+  library(aws.s3)
+}
+
+if (!require("h2o")) {
+  install.packages("h2o")
+  library(h2o)
+}
+
+library(aws.s3)
+
+# set the credentials this r instances uses to access minio
+Sys.setenv(
+  "AWS_ACCESS_KEY_ID" = "minioadmin",
+  "AWS_SECRET_ACCESS_KEY" = "minioadmin",
+  "AWS_DEFAULT_REGION" = "",
+  "AWS_S3_ENDPOINT" = "localhost:9000")  
+
+# get the bucket - read the csv files from the minio cluster
+b <- get_bucket(bucket = "123", use_https = F, region = "")
+
+dat <- s3read_using(FUN = read_csv, object = "Salary_Data.csv", bucket = b,
+                    opts = list(use_https = FALSE, region = ""))
+
+Sys.setenv(JAVA_HOME="path/to/your/java")
+
+#install.packages("rJava")
+#library(rJava)
+
+# put the csv file into the bucket
+put_object(
+  file = "S&P.csv",
+  object = "S&P.csv",
+  bucket = "111",
+  acl = "public-read",
+  use_https = F, region = ""
+)
+
+Sys.setenv(JAVA_HOME="C:\\Program Files\\Microsoft\\jdk-11.0.16.101-hotspot")
+
+library(h2o)
+h2o.init()
+
+# path to the csv file in MinIO
+#path <- "http://localhost:9000/111/S&P.csv"
+
+# path to the csv file in MinIO
+path <- "http://localhost:9000/111/S%26P.csv"
+
+# read data from MinIO into H2O
+data <- h2o.importFile(path, header = TRUE, sep = ",")
+
+data_h2o <- as.h2o(data)
+
+# check the data
+summary(data)
+
+#colnames(data)
+
+
+# train a machine learning model with H2O (this is an example using a generalized linear model)
+y <- "GSPC.Close" # column name of the target variable
+x <- setdiff(names(data), y) # column names of the predictor variables
+
+# Split the dataset into train and validation
+splits <- h2o.splitFrame(data = data, ratios = 0.8, seed = 1234)
+train <- h2o.assign(splits[[1]], "train.hex") # 80%
+valid <- h2o.assign(splits[[2]], "valid.hex") # 20%
+
+# Train the model
+glm <- h2o.glm(x = x, y = y, training_frame = train, validation_frame = valid, family = "gaussian")
+
+
+# Print the model summary
+print(summary(glm))
